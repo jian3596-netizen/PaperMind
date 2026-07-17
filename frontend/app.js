@@ -192,6 +192,12 @@ function renderCompare(doc) {
       const blockEl = document.createElement("div");
       blockEl.className = "text-block";
       blockEl.dataset.blockId = block.id;
+      blockEl.dataset.pageWidth = String(page.width);
+      blockEl.dataset.pageHeight = String(page.height);
+      blockEl.dataset.x0 = String(x0);
+      blockEl.dataset.y0 = String(y0);
+      blockEl.dataset.x1 = String(x1);
+      blockEl.dataset.y1 = String(y1);
       blockEl.style.left = `${(x0 / page.width) * 100}%`;
       blockEl.style.top = `${(y0 / page.height) * 100}%`;
       blockEl.style.width = `${Math.max(((x1 - x0) / page.width) * 100, 1)}%`;
@@ -199,7 +205,11 @@ function renderCompare(doc) {
       blockEl.classList.toggle("selected", selectedBlockIds.has(block.id));
       if (block.image_path) {
         blockEl.classList.add("visual-block");
-        blockEl.innerHTML = `<img src="/api/documents/${doc.id}/assets/${encodeAssetPath(block.image_path)}" alt="${escapeHtml(block.type || "截图")}" loading="lazy" />`;
+        blockEl.innerHTML = `
+          <img src="/api/documents/${doc.id}/assets/${encodeAssetPath(block.image_path)}" alt="${escapeHtml(block.type || "截图")}" loading="lazy" />
+          <span class="resize-handle" title="拖动调整截图区域"></span>
+        `;
+        setupVisualRegionResize(blockEl);
       } else {
         blockEl.textContent = block.text;
       }
@@ -243,6 +253,77 @@ function updateEditToolbarVisibility() {
   const visible = currentView === "compare" && selectedDocument?.status === "done";
   editToolbar.classList.toggle("hidden", !visible);
   updateSelectionStyles();
+}
+
+function setupVisualRegionResize(blockEl) {
+  const handle = blockEl.querySelector(".resize-handle");
+  if (!handle) return;
+
+  handle.addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+    const pageEl = blockEl.closest(".text-page");
+    if (!pageEl || !selectedDocument) return;
+
+    selectedBlockIds.clear();
+    selectedBlockIds.add(blockEl.dataset.blockId);
+    updateSelectionStyles();
+
+    const pageRect = pageEl.getBoundingClientRect();
+    const pageWidth = Number(blockEl.dataset.pageWidth);
+    const pageHeight = Number(blockEl.dataset.pageHeight);
+    const x0 = Number(blockEl.dataset.x0);
+    const y0 = Number(blockEl.dataset.y0);
+    const startX1 = Number(blockEl.dataset.x1);
+    const startY1 = Number(blockEl.dataset.y1);
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
+
+    const onMove = (moveEvent) => {
+      const dx = ((moveEvent.clientX - startClientX) / pageRect.width) * pageWidth;
+      const dy = ((moveEvent.clientY - startClientY) / pageRect.height) * pageHeight;
+      const x1 = clamp(startX1 + dx, x0 + 8, pageWidth);
+      const y1 = clamp(startY1 + dy, y0 + 8, pageHeight);
+      blockEl.dataset.x1 = String(x1);
+      blockEl.dataset.y1 = String(y1);
+      blockEl.style.width = `${((x1 - x0) / pageWidth) * 100}%`;
+      blockEl.style.height = `${((y1 - y0) / pageHeight) * 100}%`;
+    };
+
+    const onUp = async () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      await saveVisualRegionResize(blockEl);
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+}
+
+async function saveVisualRegionResize(blockEl) {
+  if (!selectedDocument) return;
+  const bbox = [
+    Number(blockEl.dataset.x0),
+    Number(blockEl.dataset.y0),
+    Number(blockEl.dataset.x1),
+    Number(blockEl.dataset.y1),
+  ];
+  const response = await fetch(`/api/documents/${selectedDocument.id}/edit/resize-visual`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ block_id: blockEl.dataset.blockId, bbox }),
+  });
+  if (!response.ok) {
+    alert("调整截图区域失败");
+    await loadDocument(selectedDocument.id);
+    return;
+  }
+  const result = await response.json();
+  selectedDocument = result.document;
+  selectedBlockIds.clear();
+  selectedBlockIds.add(blockEl.dataset.blockId);
+  renderSelectedDocument();
 }
 
 function setupMarqueeSelection(textPage) {
@@ -466,6 +547,10 @@ function assetUrl(documentId, path) {
     return escapeHtml(cleanPath);
   }
   return `/api/documents/${documentId}/assets/${encodeAssetPath(cleanPath)}`;
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function startPolling() {

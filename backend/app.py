@@ -31,6 +31,11 @@ class DeleteBlocksRequest(BaseModel):
     block_ids: list[str]
 
 
+class ResizeVisualRequest(BaseModel):
+    block_id: str
+    bbox: list[float]
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_db()
@@ -159,6 +164,53 @@ def delete_blocks(document_id: str, payload: DeleteBlocksRequest) -> dict:
         )
 
     return {"ok": True, "removed": len(removed_blocks), "document": get_document(document_id)}
+
+
+@app.post("/api/documents/{document_id}/edit/resize-visual")
+def resize_visual_block(document_id: str, payload: ResizeVisualRequest) -> dict:
+    if len(payload.bbox) != 4:
+        raise HTTPException(status_code=400, detail="bbox must have 4 numbers")
+
+    row = _get_row(document_id)
+    blocks = _ensure_block_ids(_loads_json(row["blocks_json"]))
+    target_page = None
+    target_block = None
+    for page in blocks.get("pages", []):
+        for block in page.get("blocks", []):
+            if block.get("id") == payload.block_id:
+                target_page = page
+                target_block = block
+                break
+        if target_block:
+            break
+
+    if target_page is None or target_block is None:
+        raise HTTPException(status_code=404, detail="Block not found")
+    if not target_block.get("image_path"):
+        raise HTTPException(status_code=400, detail="Only visual blocks can be resized")
+
+    bbox = _clamp_bbox(payload.bbox, float(target_page["width"]), float(target_page["height"]))
+    if bbox[2] - bbox[0] < 8 or bbox[3] - bbox[1] < 8:
+        raise HTTPException(status_code=400, detail="bbox is too small")
+
+    _push_edit_history(row, "resize-visual")
+    image_path = _crop_pdf_region(row, int(target_page["page"]), bbox, str(target_block["id"]))
+    markdown = _replace_image_path(row["markdown"] or "", str(target_block.get("image_path") or ""), image_path)
+    markdown_clean = clean_markdown(markdown)
+    target_block["bbox"] = bbox
+    target_block["image_path"] = image_path
+
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE documents
+            SET blocks_json = ?, markdown = ?, markdown_clean = ?
+            WHERE id = ?
+            """,
+            (json.dumps(blocks, ensure_ascii=False), markdown, markdown_clean, document_id),
+        )
+
+    return {"ok": True, "document": get_document(document_id)}
 
 
 @app.post("/api/documents/{document_id}/edit/undo")
@@ -338,6 +390,42 @@ def _push_edit_history(row, action_type: str) -> None:
                 row["markdown_clean"] or clean_markdown(row["markdown"] or ""),
             ),
         )
+
+
+def _clamp_bbox(bbox: list[float], page_width: float, page_height: float) -> list[float]:
+    x0, y0, x1, y1 = [float(value) for value in bbox]
+    x0 = min(max(x0, 0), page_width)
+    y0 = min(max(y0, 0), page_height)
+    x1 = min(max(x1, 0), page_width)
+    y1 = min(max(y1, 0), page_height)
+    return [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
+
+
+def _crop_pdf_region(row, page_index: int, bbox: list[float], block_id: str) -> str:
+    doc = fitz.open(row["pdf_path"])
+    if page_index < 0 or page_index >= len(doc):
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    output_dir = Path(row["output_dir"])
+    crop_dir = output_dir / "adjusted_crops"
+    crop_dir.mkdir(parents=True, exist_ok=True)
+    safe_block_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", block_id)
+    target = crop_dir / f"{safe_block_id}_{uuid.uuid4().hex[:8]}.png"
+    page = doc[page_index]
+    clip = fitz.Rect(*bbox)
+    pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=clip, alpha=False)
+    pix.save(target)
+    return str(target.relative_to(output_dir))
+
+
+def _replace_image_path(markdown: str, old_path: str, new_path: str) -> str:
+    if not old_path:
+        return markdown
+    return re.sub(
+        rf"(!\[[^\]]*\]\(){re.escape(old_path)}(\))",
+        rf"\g<1>{new_path}\2",
+        markdown,
+    )
 
 
 def _remove_block_from_markdown(markdown: str, block: dict) -> str:
