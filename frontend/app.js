@@ -321,7 +321,7 @@ function setupVisualRegionResize(blockEl) {
       blockEl.dataset.y0 = String(draftBox.y0);
       blockEl.dataset.x1 = String(draftBox.x1);
       blockEl.dataset.y1 = String(draftBox.y1);
-      await saveVisualRegionResize(blockEl);
+      await saveVisualRegionResize(blockEl, draftBox);
     };
 
     document.addEventListener("mousemove", onMove);
@@ -336,13 +336,14 @@ function positionCropPreview(preview, box, pageWidth, pageHeight) {
   preview.style.height = `${((box.y1 - box.y0) / pageHeight) * 100}%`;
 }
 
-async function saveVisualRegionResize(blockEl) {
+async function saveVisualRegionResize(blockEl, box = null) {
   if (!selectedDocument) return;
+  blockEl.classList.add("crop-saving");
   const bbox = [
-    Number(blockEl.dataset.x0),
-    Number(blockEl.dataset.y0),
-    Number(blockEl.dataset.x1),
-    Number(blockEl.dataset.y1),
+    Number(box?.x0 ?? blockEl.dataset.x0),
+    Number(box?.y0 ?? blockEl.dataset.y0),
+    Number(box?.x1 ?? blockEl.dataset.x1),
+    Number(box?.y1 ?? blockEl.dataset.y1),
   ];
   const response = await fetch(`/api/documents/${selectedDocument.id}/edit/resize-visual`, {
     method: "POST",
@@ -350,6 +351,7 @@ async function saveVisualRegionResize(blockEl) {
     body: JSON.stringify({ block_id: blockEl.dataset.blockId, bbox }),
   });
   if (!response.ok) {
+    blockEl.classList.remove("crop-saving");
     alert("调整截图区域失败");
     await loadDocument(selectedDocument.id);
     return;

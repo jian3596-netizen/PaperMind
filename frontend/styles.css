@@ -399,6 +399,20 @@ input {
   border: 2px solid var(--accent);
 }
 
+.text-block.visual-block.crop-saving::before {
+  content: "重新裁剪中";
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
 .text-block.visual-block img {
   display: block;
   position: relative;
