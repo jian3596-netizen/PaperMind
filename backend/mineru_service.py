@@ -53,7 +53,7 @@ def run_recognition(document_id: str) -> None:
         middle_path = result_root / f"{pdf_path.stem}_middle.json"
         content_list_path = result_root / f"{pdf_path.stem}_content_list.json"
         markdown = markdown_path.read_text(encoding="utf-8") if markdown_path.exists() else ""
-        supplemented = supplement_visual_crops(pdf_path, markdown, content_list_path, result_root)
+        supplemented = supplement_visual_crops(pdf_path, markdown, content_list_path, middle_path, result_root)
         markdown = insert_semantic_image_refs(markdown, supplemented)
         markdown = remove_supplemented_visual_text(markdown, middle_path, supplemented)
         markdown_clean = clean_markdown(markdown)
@@ -237,26 +237,43 @@ def extract_asset_inventory(markdown: str, content_list_path: Path | None = None
     }
 
 
-def supplement_visual_crops(pdf_path: Path, markdown: str, content_list_path: Path, result_root: Path) -> list[dict[str, Any]]:
+def supplement_visual_crops(
+    pdf_path: Path,
+    markdown: str,
+    content_list_path: Path,
+    middle_path: Path,
+    result_root: Path,
+) -> list[dict[str, Any]]:
     assets = extract_asset_inventory(markdown, content_list_path, result_root)
     image_dir = result_root / "images"
     image_dir.mkdir(parents=True, exist_ok=True)
 
     doc = fitz.open(pdf_path)
-    created: list[dict[str, Any]] = []
+    created: list[dict[str, Any]] = _semantic_crops_from_mineru(content_list_path, middle_path)
+    existing = {
+        (str(crop.get("type")), int(crop.get("number")))
+        for crop in created
+        if crop.get("number") is not None
+    }
     for number in assets["semantic"]["figures"]:
+        if ("figure", number) in existing:
+            continue
         target = image_dir / f"semantic_figure_{number}.png"
         crop = _crop_label_from_pdf(doc, "Figure", number, target)
         if crop:
             created.append({"type": "figure", "number": number, "path": str(target.relative_to(result_root)), **crop})
 
     for number in assets["semantic"]["tables"]:
+        if ("table", number) in existing:
+            continue
         target = image_dir / f"semantic_table_{number}.png"
         crop = _crop_label_from_pdf(doc, "Table", number, target)
         if crop:
             created.append({"type": "table", "number": number, "path": str(target.relative_to(result_root)), **crop})
 
     for number in assets["semantic"]["charts"]:
+        if ("chart", number) in existing:
+            continue
         target = image_dir / f"semantic_chart_{number}.png"
         crop = _crop_label_from_pdf(doc, "Chart", number, target)
         if crop:
@@ -265,6 +282,70 @@ def supplement_visual_crops(pdf_path: Path, markdown: str, content_list_path: Pa
     if created:
         print(f"[mineru-assets] supplemented {len(created)} visual crops: {created}")
     return created
+
+
+def _semantic_crops_from_mineru(content_list_path: Path, middle_path: Path) -> list[dict[str, Any]]:
+    if not content_list_path.exists() or not middle_path.exists():
+        return []
+
+    content_list = json.loads(content_list_path.read_text(encoding="utf-8"))
+    image_bboxes = _image_bboxes_by_page(middle_path)
+    image_offsets: dict[int, int] = {}
+    crops: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+
+    for item in content_list:
+        if item.get("type") not in {"image", "table"} or not item.get("img_path"):
+            continue
+
+        page_idx = int(item.get("page_idx", 0))
+        bbox_index = image_offsets.get(page_idx, 0)
+        page_bboxes = image_bboxes.get(page_idx, [])
+        image_offsets[page_idx] = bbox_index + 1
+        if bbox_index >= len(page_bboxes):
+            continue
+
+        caption = " ".join(_caption_texts(item))
+        for crop_type, pattern in (
+            ("figure", r"\bFigure\s+(\d+)[A-Za-z]?\b"),
+            ("table", r"\bTable\s+(\d+)[A-Za-z]?\b"),
+            ("chart", r"\bChart\s+(\d+)[A-Za-z]?\b"),
+        ):
+            numbers = _collect_numbered_labels(caption, pattern)
+            if not numbers:
+                continue
+            key = (crop_type, numbers[0])
+            if key in seen:
+                continue
+            seen.add(key)
+            crops.append(
+                {
+                    "type": crop_type,
+                    "number": numbers[0],
+                    "page": page_idx,
+                    "bbox": page_bboxes[bbox_index],
+                    "path": str(item["img_path"]),
+                    "source": "mineru",
+                }
+            )
+            break
+
+    return crops
+
+
+def _image_bboxes_by_page(middle_path: Path) -> dict[int, list[list[float]]]:
+    raw = json.loads(middle_path.read_text(encoding="utf-8"))
+    by_page: dict[int, list[list[float]]] = {}
+    for page_idx, page in enumerate(raw.get("pdf_info", [])):
+        blocks = page.get("preproc_blocks") or page.get("para_blocks") or []
+        for block in blocks:
+            block_type = str(block.get("type", "")).lower()
+            if block_type not in {"image", "table"}:
+                continue
+            bbox = block.get("bbox")
+            if bbox and len(bbox) == 4:
+                by_page.setdefault(page_idx, []).append([float(value) for value in bbox])
+    return by_page
 
 
 def remove_supplemented_visual_text(markdown: str, middle_path: Path, crops: list[dict[str, Any]]) -> str:
