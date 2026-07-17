@@ -206,6 +206,7 @@ function renderCompare(doc) {
       blockEl.classList.toggle("selected", selectedBlockIds.has(block.id));
       if (block.image_path) {
         blockEl.classList.add("visual-block");
+        blockEl.style.height = "auto";
         blockEl.innerHTML = `
           <img src="/api/documents/${doc.id}/assets/${encodeAssetPath(block.image_path)}" alt="${escapeHtml(block.type || "截图")}" loading="lazy" />
           <span class="crop-hint">调整裁剪区域</span>
