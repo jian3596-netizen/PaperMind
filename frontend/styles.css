@@ -372,6 +372,7 @@ input {
 }
 
 .text-block.selected {
+  z-index: 12;
   border-color: #0b5f59;
   background: rgba(15, 118, 110, 0.2);
   box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.28);
@@ -384,8 +385,24 @@ input {
   overflow: visible;
 }
 
+.text-block.visual-block::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: 1px solid rgba(19, 47, 58, 0.25);
+  pointer-events: none;
+}
+
+.text-block.visual-block.selected::after,
+.text-block.visual-block.resizing-region::after {
+  border: 2px solid var(--accent);
+}
+
 .text-block.visual-block img {
   display: block;
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -395,6 +412,7 @@ input {
 
 .crop-hint {
   position: absolute;
+  z-index: 4;
   left: 6px;
   top: 6px;
   padding: 3px 6px;
@@ -450,6 +468,7 @@ input {
 
 .resize-handle {
   position: absolute;
+  z-index: 4;
   width: 12px;
   height: 12px;
   border: 2px solid white;
