@@ -380,23 +380,16 @@ input {
 
 .text-block.visual-block {
   padding: 0;
-  border-color: rgba(19, 47, 58, 0.25);
+  border-color: transparent;
+  outline: 1px solid rgba(19, 47, 58, 0.28);
+  outline-offset: 0;
   background: #fff;
   overflow: visible;
 }
 
-.text-block.visual-block::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border: 1px solid rgba(19, 47, 58, 0.25);
-  pointer-events: none;
-}
-
-.text-block.visual-block.selected::after,
-.text-block.visual-block.resizing-region::after {
-  border: 2px solid var(--accent);
+.text-block.visual-block.selected,
+.text-block.visual-block.resizing-region {
+  outline: 2px solid var(--accent);
 }
 
 .text-block.visual-block.crop-saving::before {
