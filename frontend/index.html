@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MinerU PDF 识别</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">M</span>
+        <div>
+          <h1>MinerU 识别台</h1>
+          <p>PDF 导入、识别、历史结果对照</p>
+        </div>
+      </div>
+
+      <form id="upload-form" class="upload-panel">
+        <label class="file-drop">
+          <input id="pdf-file" type="file" accept="application/pdf" required />
+          <span>选择 PDF 文件</span>
+          <strong id="file-name">未选择文件</strong>
+        </label>
+        <div class="method-row">
+          <label><input type="radio" name="method" value="txt" checked /> 文本型</label>
+          <label><input type="radio" name="method" value="ocr" /> OCR</label>
+          <label><input type="radio" name="method" value="auto" /> 自动</label>
+        </div>
+        <button class="primary-button" type="submit">上传并识别</button>
+      </form>
+
+      <div class="history-head">
+        <h2>历史文件</h2>
+        <button id="refresh-button" title="刷新历史">刷新</button>
+      </div>
+      <div id="history-list" class="history-list"></div>
+    </aside>
+
+    <main class="workspace">
+      <header class="toolbar">
+        <div>
+          <h2 id="doc-title">选择或上传一个 PDF</h2>
+          <p id="doc-meta">识别完成后会显示原 PDF 和带位置的文字层。</p>
+        </div>
+        <div class="toolbar-actions">
+          <div id="edit-toolbar" class="edit-toolbar hidden">
+            <span id="selection-count">0 个已选</span>
+            <button id="delete-selected" type="button" disabled>删除选中</button>
+            <button id="undo-edit" type="button">撤销</button>
+            <button id="reset-edit" type="button">重置</button>
+          </div>
+          <div class="view-tabs" role="tablist">
+            <button class="active" data-view="compare">对照</button>
+            <button data-view="markdown">Markdown</button>
+          </div>
+        </div>
+      </header>
+
+      <section id="empty-state" class="empty-state">
+        <h3>等待文件</h3>
+        <p>导入 PDF 后，后台会调用本机 MinerU，结果保存到 SQLite。</p>
+      </section>
+
+      <section id="compare-view" class="compare-view hidden"></section>
+      <section id="markdown-view" class="markdown-view hidden">
+        <div id="markdown-content" class="markdown-content"></div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
