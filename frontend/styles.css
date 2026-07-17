@@ -380,15 +380,18 @@ input {
 
 .text-block.visual-block {
   padding: 0;
-  border-color: transparent;
+  border: 0;
   outline: 1px solid rgba(19, 47, 58, 0.28);
   outline-offset: 0;
   background: #fff;
-  overflow: visible;
+  overflow: hidden;
+  font-size: 0;
+  line-height: 0;
+  white-space: normal;
 }
 
 .text-block.visual-block.selected,
-.text-block.visual-block.resizing-region {
+.text-block.visual-block.crop-saving {
   outline: 2px solid var(--accent);
 }
 
@@ -433,35 +436,41 @@ input {
 }
 
 .visual-block.selected .crop-hint,
-.visual-block.resizing-region .crop-hint {
+.visual-block.crop-saving .crop-hint {
   opacity: 1;
 }
 
-.visual-block.resizing-region {
-  border-color: var(--accent);
-}
-
-.visual-block.resizing-region img {
-  opacity: 0.72;
-}
-
-.crop-region-preview {
+.visual-region-control {
+  display: none;
   position: absolute;
-  z-index: 25;
-  outline: 2px solid var(--accent);
+  z-index: 6;
+  border: 2px solid var(--accent);
   background: rgba(15, 118, 110, 0.14);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9), 0 0 0 9999px rgba(19, 47, 58, 0.04);
   pointer-events: none;
 }
 
-.pdf-crop-preview {
-  z-index: 5;
-  background: rgba(15, 118, 110, 0.2);
-  box-shadow: inset 0 0 0 1px white, 0 0 0 9999px rgba(19, 47, 58, 0.06);
+.visual-region-control.selected {
+  display: block;
 }
 
-.pdf-crop-preview::before {
-  content: "裁剪区域";
+.visual-region-control.resizing-region {
+  background: rgba(15, 118, 110, 0.22);
+}
+
+.visual-region-control.crop-saving::after {
+  content: "重新裁剪中";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.region-label {
   position: absolute;
   left: 6px;
   top: 6px;
@@ -471,48 +480,80 @@ input {
   color: white;
   font-size: 11px;
   line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
-.resize-handle {
+.region-resize-edge,
+.region-resize-corner {
   position: absolute;
-  z-index: 4;
+  z-index: 2;
+  pointer-events: auto;
+}
+
+.region-resize-edge.top,
+.region-resize-edge.bottom {
+  left: 8px;
+  width: calc(100% - 16px);
+  height: 12px;
+  cursor: ns-resize;
+}
+
+.region-resize-edge.top {
+  top: -7px;
+}
+
+.region-resize-edge.bottom {
+  bottom: -7px;
+}
+
+.region-resize-edge.left,
+.region-resize-edge.right {
+  top: 8px;
+  width: 12px;
+  height: calc(100% - 16px);
+  cursor: ew-resize;
+}
+
+.region-resize-edge.left {
+  left: -7px;
+}
+
+.region-resize-edge.right {
+  right: -7px;
+}
+
+.region-resize-corner {
   width: 12px;
   height: 12px;
   border: 2px solid white;
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 1px 5px rgba(16, 24, 40, 0.25);
-  cursor: nwse-resize;
-  opacity: 0;
 }
 
-.resize-handle.top-left {
-  left: -5px;
-  top: -5px;
+.region-resize-corner.top-left {
+  left: -7px;
+  top: -7px;
   cursor: nwse-resize;
 }
 
-.resize-handle.top-right {
-  right: -5px;
-  top: -5px;
+.region-resize-corner.top-right {
+  right: -7px;
+  top: -7px;
   cursor: nesw-resize;
 }
 
-.resize-handle.bottom-left {
-  left: -5px;
-  bottom: -5px;
+.region-resize-corner.bottom-left {
+  left: -7px;
+  bottom: -7px;
   cursor: nesw-resize;
 }
 
-.resize-handle.bottom-right {
-  right: -5px;
-  bottom: -5px;
+.region-resize-corner.bottom-right {
+  right: -7px;
+  bottom: -7px;
   cursor: nwse-resize;
-}
-
-.visual-block.selected .resize-handle,
-.visual-block:hover .resize-handle {
-  opacity: 1;
 }
 
 .selection-marquee {

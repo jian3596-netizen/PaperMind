@@ -21,7 +21,6 @@ let selectedDocument = null;
 let pollTimer = null;
 let currentView = "compare";
 let selectedBlockIds = new Set();
-const CROP_PREVIEW_PADDING = { x: 0, y: 0, bottom: 4 };
 
 fileInput.addEventListener("change", () => {
   fileName.textContent = fileInput.files[0]?.name || "未选择文件";
@@ -208,13 +207,33 @@ function renderCompare(doc) {
         blockEl.classList.add("visual-block");
         blockEl.innerHTML = `
           <img src="/api/documents/${doc.id}/assets/${encodeAssetPath(block.image_path)}" alt="${escapeHtml(block.type || "截图")}" loading="lazy" />
-          <span class="crop-hint">调整裁剪区域</span>
-          <span class="resize-handle top-left" data-resize-handle="tl" title="拖动调整截图区域"></span>
-          <span class="resize-handle top-right" data-resize-handle="tr" title="拖动调整截图区域"></span>
-          <span class="resize-handle bottom-left" data-resize-handle="bl" title="拖动调整截图区域"></span>
-          <span class="resize-handle bottom-right" data-resize-handle="br" title="拖动调整截图区域"></span>
+          <span class="crop-hint">在左侧拖拽框线调整</span>
         `;
-        setupVisualRegionResize(blockEl);
+
+        const regionEl = document.createElement("div");
+        regionEl.className = "visual-region-control";
+        regionEl.dataset.blockId = block.id;
+        regionEl.dataset.pageWidth = String(page.width);
+        regionEl.dataset.pageHeight = String(page.height);
+        regionEl.dataset.x0 = String(x0);
+        regionEl.dataset.y0 = String(y0);
+        regionEl.dataset.x1 = String(x1);
+        regionEl.dataset.y1 = String(y1);
+        regionEl.classList.toggle("selected", selectedBlockIds.has(block.id));
+        regionEl.innerHTML = `
+          <span class="region-label">当前图片</span>
+          <span class="region-resize-edge top" data-resize-handle="t" title="拖动上边界"></span>
+          <span class="region-resize-edge right" data-resize-handle="r" title="拖动右边界"></span>
+          <span class="region-resize-edge bottom" data-resize-handle="b" title="拖动下边界"></span>
+          <span class="region-resize-edge left" data-resize-handle="l" title="拖动左边界"></span>
+          <span class="region-resize-corner top-left" data-resize-handle="tl" title="拖动调整左上角"></span>
+          <span class="region-resize-corner top-right" data-resize-handle="tr" title="拖动调整右上角"></span>
+          <span class="region-resize-corner bottom-left" data-resize-handle="bl" title="拖动调整左下角"></span>
+          <span class="region-resize-corner bottom-right" data-resize-handle="br" title="拖动调整右下角"></span>
+        `;
+        positionVisualRegion(regionEl, { x0, y0, x1, y1 }, page.width, page.height);
+        pdfPage.appendChild(regionEl);
+        setupVisualRegionResize(regionEl);
       } else {
         blockEl.textContent = block.text;
       }
@@ -245,7 +264,7 @@ function toggleBlockSelection(blockId) {
 }
 
 function updateSelectionStyles() {
-  document.querySelectorAll("[data-block-id]").forEach((block) => {
+  document.querySelectorAll(".text-block[data-block-id], .visual-region-control[data-block-id]").forEach((block) => {
     block.classList.toggle("selected", selectedBlockIds.has(block.dataset.blockId));
   });
   const count = document.querySelector("#selection-count");
@@ -260,43 +279,37 @@ function updateEditToolbarVisibility() {
   updateSelectionStyles();
 }
 
-function setupVisualRegionResize(blockEl) {
-  const handles = blockEl.querySelectorAll("[data-resize-handle]");
+function setupVisualRegionResize(regionEl) {
+  const handles = regionEl.querySelectorAll("[data-resize-handle]");
   if (!handles.length) return;
 
   handles.forEach((handle) => handle.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) return;
     event.stopPropagation();
     event.preventDefault();
-    const pageEl = blockEl.closest(".text-page");
+    const pageEl = regionEl.closest(".pdf-page");
     if (!pageEl || !selectedDocument) return;
 
     selectedBlockIds.clear();
-    selectedBlockIds.add(blockEl.dataset.blockId);
+    selectedBlockIds.add(regionEl.dataset.blockId);
     updateSelectionStyles();
 
     const pageRect = pageEl.getBoundingClientRect();
-    const pageWidth = Number(blockEl.dataset.pageWidth);
-    const pageHeight = Number(blockEl.dataset.pageHeight);
-    const startX0 = Number(blockEl.dataset.x0);
-    const startY0 = Number(blockEl.dataset.y0);
-    const startX1 = Number(blockEl.dataset.x1);
-    const startY1 = Number(blockEl.dataset.y1);
+    const pageWidth = Number(regionEl.dataset.pageWidth);
+    const pageHeight = Number(regionEl.dataset.pageHeight);
+    const startX0 = Number(regionEl.dataset.x0);
+    const startY0 = Number(regionEl.dataset.y0);
+    const startX1 = Number(regionEl.dataset.x1);
+    const startY1 = Number(regionEl.dataset.y1);
     const startClientX = event.clientX;
     const startClientY = event.clientY;
     const direction = handle.dataset.resizeHandle || "br";
     let draftBox = { x0: startX0, y0: startY0, x1: startX1, y1: startY1 };
-    const preview = document.createElement("div");
-    preview.className = "crop-region-preview";
-    pageEl.appendChild(preview);
-    const pdfPageEl = blockEl.closest(".page-pair")?.querySelector(".pdf-page");
-    const pdfPreview = document.createElement("div");
-    pdfPreview.className = "crop-region-preview pdf-crop-preview";
-    if (pdfPageEl) pdfPageEl.appendChild(pdfPreview);
-    positionCropPreview(preview, draftBox, pageWidth, pageHeight);
-    if (pdfPageEl) positionCropPreview(pdfPreview, draftBox, pageWidth, pageHeight);
-    blockEl.classList.add("resizing-region");
+    let hasMoved = false;
+    regionEl.classList.add("resizing-region");
 
     const onMove = (moveEvent) => {
+      hasMoved = true;
       const dx = ((moveEvent.clientX - startClientX) / pageRect.width) * pageWidth;
       const dy = ((moveEvent.clientY - startClientY) / pageRect.height) * pageHeight;
       let x0 = startX0;
@@ -308,21 +321,19 @@ function setupVisualRegionResize(blockEl) {
       if (direction.includes("t")) y0 = clamp(startY0 + dy, 0, startY1 - 8);
       if (direction.includes("b")) y1 = clamp(startY1 + dy, startY0 + 8, pageHeight);
       draftBox = { x0, y0, x1, y1 };
-      positionCropPreview(preview, draftBox, pageWidth, pageHeight);
-      if (pdfPageEl) positionCropPreview(pdfPreview, draftBox, pageWidth, pageHeight);
+      positionVisualRegion(regionEl, draftBox, pageWidth, pageHeight);
     };
 
     const onUp = async () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
-      blockEl.classList.remove("resizing-region");
-      preview.remove();
-      pdfPreview.remove();
-      blockEl.dataset.x0 = String(draftBox.x0);
-      blockEl.dataset.y0 = String(draftBox.y0);
-      blockEl.dataset.x1 = String(draftBox.x1);
-      blockEl.dataset.y1 = String(draftBox.y1);
-      await saveVisualRegionResize(blockEl, draftBox);
+      regionEl.classList.remove("resizing-region");
+      if (!hasMoved) return;
+      regionEl.dataset.x0 = String(draftBox.x0);
+      regionEl.dataset.y0 = String(draftBox.y0);
+      regionEl.dataset.x1 = String(draftBox.x1);
+      regionEl.dataset.y1 = String(draftBox.y1);
+      await saveVisualRegionResize(regionEl, draftBox);
     };
 
     document.addEventListener("mousemove", onMove);
@@ -330,51 +341,34 @@ function setupVisualRegionResize(blockEl) {
   }));
 }
 
-function positionCropPreview(preview, box, pageWidth, pageHeight) {
-  const padded = paddedCropBox(box, pageWidth, pageHeight);
-  preview.style.left = `${(padded.x0 / pageWidth) * 100}%`;
-  preview.style.top = `${(padded.y0 / pageHeight) * 100}%`;
-  preview.style.width = `${((padded.x1 - padded.x0) / pageWidth) * 100}%`;
-  preview.style.height = `${((padded.y1 - padded.y0) / pageHeight) * 100}%`;
+function positionVisualRegion(regionEl, box, pageWidth, pageHeight) {
+  regionEl.style.left = `${(box.x0 / pageWidth) * 100}%`;
+  regionEl.style.top = `${(box.y0 / pageHeight) * 100}%`;
+  regionEl.style.width = `${((box.x1 - box.x0) / pageWidth) * 100}%`;
+  regionEl.style.height = `${((box.y1 - box.y0) / pageHeight) * 100}%`;
 }
 
-function paddedCropBox(box, pageWidth, pageHeight) {
-  return {
-    x0: clamp(box.x0 - CROP_PREVIEW_PADDING.x, 0, pageWidth),
-    y0: clamp(box.y0 - CROP_PREVIEW_PADDING.y, 0, pageHeight),
-    x1: clamp(box.x1 + CROP_PREVIEW_PADDING.x, 0, pageWidth),
-    y1: clamp(box.y1 + CROP_PREVIEW_PADDING.bottom, 0, pageHeight),
-  };
-}
-
-async function saveVisualRegionResize(blockEl, box = null) {
+async function saveVisualRegionResize(regionEl, box = null) {
   if (!selectedDocument) return;
-  blockEl.classList.add("crop-saving");
-  const pageWidth = Number(blockEl.dataset.pageWidth);
-  const pageHeight = Number(blockEl.dataset.pageHeight);
-  const cropBox = paddedCropBox(
-    {
-      x0: Number(box?.x0 ?? blockEl.dataset.x0),
-      y0: Number(box?.y0 ?? blockEl.dataset.y0),
-      x1: Number(box?.x1 ?? blockEl.dataset.x1),
-      y1: Number(box?.y1 ?? blockEl.dataset.y1),
-    },
-    pageWidth,
-    pageHeight,
-  );
+  const blockId = regionEl.dataset.blockId;
+  document.querySelectorAll(`[data-block-id="${CSS.escape(blockId)}"]`).forEach((element) => {
+    element.classList.add("crop-saving");
+  });
   const bbox = [
-    cropBox.x0,
-    cropBox.y0,
-    cropBox.x1,
-    cropBox.y1,
+    Number(box?.x0 ?? regionEl.dataset.x0),
+    Number(box?.y0 ?? regionEl.dataset.y0),
+    Number(box?.x1 ?? regionEl.dataset.x1),
+    Number(box?.y1 ?? regionEl.dataset.y1),
   ];
   const response = await fetch(`/api/documents/${selectedDocument.id}/edit/resize-visual`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ block_id: blockEl.dataset.blockId, bbox }),
+    body: JSON.stringify({ block_id: blockId, bbox }),
   });
   if (!response.ok) {
-    blockEl.classList.remove("crop-saving");
+    document.querySelectorAll(`[data-block-id="${CSS.escape(blockId)}"]`).forEach((element) => {
+      element.classList.remove("crop-saving");
+    });
     alert("调整截图区域失败");
     await loadDocument(selectedDocument.id);
     return;
@@ -382,7 +376,7 @@ async function saveVisualRegionResize(blockEl, box = null) {
   const result = await response.json();
   selectedDocument = result.document;
   selectedBlockIds.clear();
-  selectedBlockIds.add(blockEl.dataset.blockId);
+  selectedBlockIds.add(blockId);
   renderSelectedDocument();
 }
 
