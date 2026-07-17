@@ -196,9 +196,24 @@ def resize_visual_block(document_id: str, payload: ResizeVisualRequest) -> dict:
     _push_edit_history(row, "resize-visual")
     image_path = _crop_pdf_region(row, int(target_page["page"]), bbox, str(target_block["id"]))
     markdown = _replace_image_path(row["markdown"] or "", str(target_block.get("image_path") or ""), image_path)
-    markdown_clean = clean_markdown(markdown)
     target_block["bbox"] = bbox
     target_block["image_path"] = image_path
+
+    kept_blocks = []
+    removed_text_blocks = []
+    for block in target_page.get("blocks", []):
+        if block is target_block:
+            kept_blocks.append(block)
+            continue
+        if not block.get("image_path") and _bbox_overlaps_region(block.get("bbox", []), bbox):
+            removed_text_blocks.append(block)
+            continue
+        kept_blocks.append(block)
+    target_page["blocks"] = kept_blocks
+
+    for block in removed_text_blocks:
+        markdown = _remove_block_from_markdown(markdown, block)
+    markdown_clean = clean_markdown(markdown)
 
     with get_connection() as conn:
         conn.execute(
@@ -416,6 +431,19 @@ def _crop_pdf_region(row, page_index: int, bbox: list[float], block_id: str) -> 
     pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=clip, alpha=False)
     pix.save(target)
     return str(target.relative_to(output_dir))
+
+
+def _bbox_overlaps_region(block_bbox: list[float], region_bbox: list[float]) -> bool:
+    if len(block_bbox) != 4 or len(region_bbox) != 4:
+        return False
+    bx0, by0, bx1, by1 = [float(value) for value in block_bbox]
+    rx0, ry0, rx1, ry1 = [float(value) for value in region_bbox]
+    block_area = max((bx1 - bx0) * (by1 - by0), 1.0)
+    ix0, iy0 = max(bx0, rx0), max(by0, ry0)
+    ix1, iy1 = min(bx1, rx1), min(by1, ry1)
+    overlap = max(ix1 - ix0, 0) * max(iy1 - iy0, 0)
+    center_inside = rx0 <= (bx0 + bx1) / 2 <= rx1 and ry0 <= (by0 + by1) / 2 <= ry1
+    return overlap / block_area > 0.35 or center_inside
 
 
 def _replace_image_path(markdown: str, old_path: str, new_path: str) -> str:
