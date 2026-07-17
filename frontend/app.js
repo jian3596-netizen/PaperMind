@@ -284,10 +284,14 @@ function setupVisualRegionResize(blockEl) {
     const startClientY = event.clientY;
     const direction = handle.dataset.resizeHandle || "br";
     let draftBox = { x0: startX0, y0: startY0, x1: startX1, y1: startY1 };
+    const preview = document.createElement("div");
+    preview.className = "crop-region-preview";
+    pageEl.appendChild(preview);
     const pdfPageEl = blockEl.closest(".page-pair")?.querySelector(".pdf-page");
     const pdfPreview = document.createElement("div");
     pdfPreview.className = "crop-region-preview pdf-crop-preview";
     if (pdfPageEl) pdfPageEl.appendChild(pdfPreview);
+    positionCropPreview(preview, draftBox, pageWidth, pageHeight);
     if (pdfPageEl) positionCropPreview(pdfPreview, draftBox, pageWidth, pageHeight);
     blockEl.classList.add("resizing-region");
 
@@ -303,6 +307,7 @@ function setupVisualRegionResize(blockEl) {
       if (direction.includes("t")) y0 = clamp(startY0 + dy, 0, startY1 - 8);
       if (direction.includes("b")) y1 = clamp(startY1 + dy, startY0 + 8, pageHeight);
       draftBox = { x0, y0, x1, y1 };
+      positionCropPreview(preview, draftBox, pageWidth, pageHeight);
       if (pdfPageEl) positionCropPreview(pdfPreview, draftBox, pageWidth, pageHeight);
     };
 
@@ -310,6 +315,7 @@ function setupVisualRegionResize(blockEl) {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
       blockEl.classList.remove("resizing-region");
+      preview.remove();
       pdfPreview.remove();
       blockEl.dataset.x0 = String(draftBox.x0);
       blockEl.dataset.y0 = String(draftBox.y0);

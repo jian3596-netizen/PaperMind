@@ -431,11 +431,11 @@ input {
 }
 
 .visual-block.resizing-region {
-  border-color: rgba(15, 118, 110, 0.45);
+  border-color: var(--accent);
 }
 
 .visual-block.resizing-region img {
-  opacity: 1;
+  opacity: 0.72;
 }
 
 .crop-region-preview {
