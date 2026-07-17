@@ -352,6 +352,10 @@ input {
   overflow: hidden;
 }
 
+.text-page {
+  container-type: inline-size;
+}
+
 .pdf-page img {
   display: block;
   width: 100%;
@@ -365,7 +369,7 @@ input {
   border: 1px solid rgba(15, 118, 110, 0.18);
   background: rgba(15, 118, 110, 0.055);
   color: #182230;
-  font-size: 9px;
+  font-size: clamp(9px, 1.4cqw, 12px);
   line-height: 1.18;
   white-space: pre-wrap;
   cursor: pointer;
