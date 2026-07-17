@@ -21,6 +21,7 @@ let selectedDocument = null;
 let pollTimer = null;
 let currentView = "compare";
 let selectedBlockIds = new Set();
+const CROP_PREVIEW_PADDING = { x: 0, y: 0, bottom: 4 };
 
 fileInput.addEventListener("change", () => {
   fileName.textContent = fileInput.files[0]?.name || "未选择文件";
@@ -330,20 +331,42 @@ function setupVisualRegionResize(blockEl) {
 }
 
 function positionCropPreview(preview, box, pageWidth, pageHeight) {
-  preview.style.left = `${(box.x0 / pageWidth) * 100}%`;
-  preview.style.top = `${(box.y0 / pageHeight) * 100}%`;
-  preview.style.width = `${((box.x1 - box.x0) / pageWidth) * 100}%`;
-  preview.style.height = `${((box.y1 - box.y0) / pageHeight) * 100}%`;
+  const padded = paddedCropBox(box, pageWidth, pageHeight);
+  preview.style.left = `${(padded.x0 / pageWidth) * 100}%`;
+  preview.style.top = `${(padded.y0 / pageHeight) * 100}%`;
+  preview.style.width = `${((padded.x1 - padded.x0) / pageWidth) * 100}%`;
+  preview.style.height = `${((padded.y1 - padded.y0) / pageHeight) * 100}%`;
+}
+
+function paddedCropBox(box, pageWidth, pageHeight) {
+  return {
+    x0: clamp(box.x0 - CROP_PREVIEW_PADDING.x, 0, pageWidth),
+    y0: clamp(box.y0 - CROP_PREVIEW_PADDING.y, 0, pageHeight),
+    x1: clamp(box.x1 + CROP_PREVIEW_PADDING.x, 0, pageWidth),
+    y1: clamp(box.y1 + CROP_PREVIEW_PADDING.bottom, 0, pageHeight),
+  };
 }
 
 async function saveVisualRegionResize(blockEl, box = null) {
   if (!selectedDocument) return;
   blockEl.classList.add("crop-saving");
+  const pageWidth = Number(blockEl.dataset.pageWidth);
+  const pageHeight = Number(blockEl.dataset.pageHeight);
+  const cropBox = paddedCropBox(
+    {
+      x0: Number(box?.x0 ?? blockEl.dataset.x0),
+      y0: Number(box?.y0 ?? blockEl.dataset.y0),
+      x1: Number(box?.x1 ?? blockEl.dataset.x1),
+      y1: Number(box?.y1 ?? blockEl.dataset.y1),
+    },
+    pageWidth,
+    pageHeight,
+  );
   const bbox = [
-    Number(box?.x0 ?? blockEl.dataset.x0),
-    Number(box?.y0 ?? blockEl.dataset.y0),
-    Number(box?.x1 ?? blockEl.dataset.x1),
-    Number(box?.y1 ?? blockEl.dataset.y1),
+    cropBox.x0,
+    cropBox.y0,
+    cropBox.x1,
+    cropBox.y1,
   ];
   const response = await fetch(`/api/documents/${selectedDocument.id}/edit/resize-visual`, {
     method: "POST",
