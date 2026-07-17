@@ -283,6 +283,11 @@ function setupVisualRegionResize(blockEl) {
     const startClientX = event.clientX;
     const startClientY = event.clientY;
     const direction = handle.dataset.resizeHandle || "br";
+    let draftBox = { x0: startX0, y0: startY0, x1: startX1, y1: startY1 };
+    const preview = document.createElement("div");
+    preview.className = "crop-region-preview";
+    pageEl.appendChild(preview);
+    positionCropPreview(preview, draftBox, pageWidth, pageHeight);
     blockEl.classList.add("resizing-region");
 
     const onMove = (moveEvent) => {
@@ -296,26 +301,32 @@ function setupVisualRegionResize(blockEl) {
       if (direction.includes("r")) x1 = clamp(startX1 + dx, startX0 + 8, pageWidth);
       if (direction.includes("t")) y0 = clamp(startY0 + dy, 0, startY1 - 8);
       if (direction.includes("b")) y1 = clamp(startY1 + dy, startY0 + 8, pageHeight);
-      blockEl.dataset.x0 = String(x0);
-      blockEl.dataset.y0 = String(y0);
-      blockEl.dataset.x1 = String(x1);
-      blockEl.dataset.y1 = String(y1);
-      blockEl.style.left = `${(x0 / pageWidth) * 100}%`;
-      blockEl.style.top = `${(y0 / pageHeight) * 100}%`;
-      blockEl.style.width = `${((x1 - x0) / pageWidth) * 100}%`;
-      blockEl.style.height = `${((y1 - y0) / pageHeight) * 100}%`;
+      draftBox = { x0, y0, x1, y1 };
+      positionCropPreview(preview, draftBox, pageWidth, pageHeight);
     };
 
     const onUp = async () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
       blockEl.classList.remove("resizing-region");
+      preview.remove();
+      blockEl.dataset.x0 = String(draftBox.x0);
+      blockEl.dataset.y0 = String(draftBox.y0);
+      blockEl.dataset.x1 = String(draftBox.x1);
+      blockEl.dataset.y1 = String(draftBox.y1);
       await saveVisualRegionResize(blockEl);
     };
 
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
   }));
+}
+
+function positionCropPreview(preview, box, pageWidth, pageHeight) {
+  preview.style.left = `${(box.x0 / pageWidth) * 100}%`;
+  preview.style.top = `${(box.y0 / pageHeight) * 100}%`;
+  preview.style.width = `${((box.x1 - box.x0) / pageWidth) * 100}%`;
+  preview.style.height = `${((box.y1 - box.y0) / pageHeight) * 100}%`;
 }
 
 async function saveVisualRegionResize(blockEl) {
