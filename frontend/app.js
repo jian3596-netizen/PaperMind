@@ -207,7 +207,11 @@ function renderCompare(doc) {
         blockEl.classList.add("visual-block");
         blockEl.innerHTML = `
           <img src="/api/documents/${doc.id}/assets/${encodeAssetPath(block.image_path)}" alt="${escapeHtml(block.type || "截图")}" loading="lazy" />
-          <span class="resize-handle" title="拖动调整截图区域"></span>
+          <span class="crop-hint">调整裁剪区域</span>
+          <span class="resize-handle top-left" data-resize-handle="tl" title="拖动调整截图区域"></span>
+          <span class="resize-handle top-right" data-resize-handle="tr" title="拖动调整截图区域"></span>
+          <span class="resize-handle bottom-left" data-resize-handle="bl" title="拖动调整截图区域"></span>
+          <span class="resize-handle bottom-right" data-resize-handle="br" title="拖动调整截图区域"></span>
         `;
         setupVisualRegionResize(blockEl);
       } else {
@@ -256,10 +260,10 @@ function updateEditToolbarVisibility() {
 }
 
 function setupVisualRegionResize(blockEl) {
-  const handle = blockEl.querySelector(".resize-handle");
-  if (!handle) return;
+  const handles = blockEl.querySelectorAll("[data-resize-handle]");
+  if (!handles.length) return;
 
-  handle.addEventListener("mousedown", (event) => {
+  handles.forEach((handle) => handle.addEventListener("mousedown", (event) => {
     event.stopPropagation();
     event.preventDefault();
     const pageEl = blockEl.closest(".text-page");
@@ -272,20 +276,32 @@ function setupVisualRegionResize(blockEl) {
     const pageRect = pageEl.getBoundingClientRect();
     const pageWidth = Number(blockEl.dataset.pageWidth);
     const pageHeight = Number(blockEl.dataset.pageHeight);
-    const x0 = Number(blockEl.dataset.x0);
-    const y0 = Number(blockEl.dataset.y0);
+    const startX0 = Number(blockEl.dataset.x0);
+    const startY0 = Number(blockEl.dataset.y0);
     const startX1 = Number(blockEl.dataset.x1);
     const startY1 = Number(blockEl.dataset.y1);
     const startClientX = event.clientX;
     const startClientY = event.clientY;
+    const direction = handle.dataset.resizeHandle || "br";
+    blockEl.classList.add("resizing-region");
 
     const onMove = (moveEvent) => {
       const dx = ((moveEvent.clientX - startClientX) / pageRect.width) * pageWidth;
       const dy = ((moveEvent.clientY - startClientY) / pageRect.height) * pageHeight;
-      const x1 = clamp(startX1 + dx, x0 + 8, pageWidth);
-      const y1 = clamp(startY1 + dy, y0 + 8, pageHeight);
+      let x0 = startX0;
+      let y0 = startY0;
+      let x1 = startX1;
+      let y1 = startY1;
+      if (direction.includes("l")) x0 = clamp(startX0 + dx, 0, startX1 - 8);
+      if (direction.includes("r")) x1 = clamp(startX1 + dx, startX0 + 8, pageWidth);
+      if (direction.includes("t")) y0 = clamp(startY0 + dy, 0, startY1 - 8);
+      if (direction.includes("b")) y1 = clamp(startY1 + dy, startY0 + 8, pageHeight);
+      blockEl.dataset.x0 = String(x0);
+      blockEl.dataset.y0 = String(y0);
       blockEl.dataset.x1 = String(x1);
       blockEl.dataset.y1 = String(y1);
+      blockEl.style.left = `${(x0 / pageWidth) * 100}%`;
+      blockEl.style.top = `${(y0 / pageHeight) * 100}%`;
       blockEl.style.width = `${((x1 - x0) / pageWidth) * 100}%`;
       blockEl.style.height = `${((y1 - y0) / pageHeight) * 100}%`;
     };
@@ -293,12 +309,13 @@ function setupVisualRegionResize(blockEl) {
     const onUp = async () => {
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
+      blockEl.classList.remove("resizing-region");
       await saveVisualRegionResize(blockEl);
     };
 
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
-  });
+  }));
 }
 
 async function saveVisualRegionResize(blockEl) {

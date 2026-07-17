@@ -393,10 +393,36 @@ input {
   pointer-events: none;
 }
 
+.crop-hint {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: rgba(19, 47, 58, 0.82);
+  color: white;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.visual-block.selected .crop-hint,
+.visual-block.resizing-region .crop-hint {
+  opacity: 1;
+}
+
+.visual-block.resizing-region {
+  border-color: var(--accent);
+  background: rgba(15, 118, 110, 0.1);
+}
+
+.visual-block.resizing-region img {
+  opacity: 0.24;
+}
+
 .resize-handle {
   position: absolute;
-  right: -5px;
-  bottom: -5px;
   width: 12px;
   height: 12px;
   border: 2px solid white;
@@ -405,6 +431,30 @@ input {
   box-shadow: 0 1px 5px rgba(16, 24, 40, 0.25);
   cursor: nwse-resize;
   opacity: 0;
+}
+
+.resize-handle.top-left {
+  left: -5px;
+  top: -5px;
+  cursor: nwse-resize;
+}
+
+.resize-handle.top-right {
+  right: -5px;
+  top: -5px;
+  cursor: nesw-resize;
+}
+
+.resize-handle.bottom-left {
+  left: -5px;
+  bottom: -5px;
+  cursor: nesw-resize;
+}
+
+.resize-handle.bottom-right {
+  right: -5px;
+  bottom: -5px;
+  cursor: nwse-resize;
 }
 
 .visual-block.selected .resize-handle,
