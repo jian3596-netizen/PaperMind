@@ -13,7 +13,7 @@ PaperMind is a local PDF recognition workspace built on top of MinerU (`magic-pd
 - Select one or more recognition blocks in the comparison view and delete them.
 - Undo the previous edit or reset a document to the post-recognition state.
 - Translate cleaned English Markdown into Chinese with DeepSeek through its OpenAI-compatible protocol.
-- Switch between the original English Markdown and the persisted Chinese translation.
+- View the original English Markdown and the persisted Chinese translation side by side.
 - Delete history records and their uploaded/result files.
 
 ## Requirements

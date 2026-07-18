@@ -9,10 +9,11 @@ const emptyState = document.querySelector("#empty-state");
 const compareView = document.querySelector("#compare-view");
 const markdownView = document.querySelector("#markdown-view");
 const markdownContent = document.querySelector("#markdown-content");
+const markdownColumns = document.querySelector("#markdown-columns");
+const translatedMarkdownPane = document.querySelector("#translated-markdown-pane");
+const translatedMarkdownContent = document.querySelector("#translated-markdown-content");
 const translateButton = document.querySelector("#translate-button");
 const translationStatus = document.querySelector("#translation-status");
-const markdownLanguageToggle = document.querySelector("#markdown-language-toggle");
-const markdownLanguageButtons = document.querySelectorAll("[data-markdown-language]");
 const tabButtons = document.querySelectorAll(".view-tabs button");
 const editToolbar = document.querySelector("#edit-toolbar");
 const selectionCount = document.querySelector("#selection-count");
@@ -26,8 +27,6 @@ let selectedTranslation = { status: "not_started" };
 let pollTimer = null;
 let translationPollTimer = null;
 let currentView = "compare";
-let markdownLanguage = "en";
-let switchToChineseWhenDone = false;
 let selectedBlockIds = new Set();
 
 fileInput.addEventListener("change", () => {
@@ -77,14 +76,6 @@ deleteSelectedButton.addEventListener("click", deleteSelectedBlocks);
 undoEditButton.addEventListener("click", undoEdit);
 resetEditButton.addEventListener("click", resetEdits);
 translateButton.addEventListener("click", startTranslation);
-
-markdownLanguageButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    markdownLanguage = button.dataset.markdownLanguage || "en";
-    renderMarkdown();
-    updateTranslationControls();
-  });
-});
 
 tabButtons.forEach((button) => {
   button.addEventListener("click", () => {
@@ -147,8 +138,6 @@ async function loadDocument(id) {
   const response = await fetch(`/api/documents/${id}`);
   selectedDocument = await response.json();
   if (documentChanged) {
-    markdownLanguage = "en";
-    switchToChineseWhenDone = false;
     stopTranslationPolling();
   }
   await loadTranslation(id);
@@ -188,29 +177,25 @@ function renderSelectedDocument() {
 function renderMarkdown() {
   if (!selectedDocument) return;
   const sourceMarkdown = selectedDocument.markdown_clean || selectedDocument.markdown || "";
-  const markdown = markdownLanguage === "zh" && selectedTranslation.status === "done"
-    ? selectedTranslation.translated_markdown || sourceMarkdown
-    : sourceMarkdown;
-  markdownContent.innerHTML = renderMarkdownDocument(markdown, selectedDocument.id);
+  const hasTranslation = selectedTranslation.status === "done" && Boolean(selectedTranslation.translated_markdown);
+  markdownContent.innerHTML = renderMarkdownDocument(sourceMarkdown, selectedDocument.id);
+  translatedMarkdownContent.innerHTML = hasTranslation
+    ? renderMarkdownDocument(selectedTranslation.translated_markdown, selectedDocument.id)
+    : "";
+  translatedMarkdownPane.classList.toggle("hidden", !hasTranslation);
+  markdownColumns.classList.toggle("has-translation", hasTranslation);
 }
 
 async function loadTranslation(documentId) {
   try {
     const response = await fetch(`/api/documents/${documentId}/translation`);
     if (!response.ok) throw new Error(await response.text());
-    const previousStatus = selectedTranslation.status;
     selectedTranslation = await response.json();
-    if (switchToChineseWhenDone && previousStatus !== "done" && selectedTranslation.status === "done") {
-      markdownLanguage = "zh";
-      switchToChineseWhenDone = false;
-    }
-    if (selectedTranslation.status !== "done" && markdownLanguage === "zh") {
-      markdownLanguage = "en";
-    }
     renderMarkdown();
     updateTranslationControls();
   } catch (error) {
     selectedTranslation = { status: "not_started", error: error.message };
+    renderMarkdown();
     updateTranslationControls();
   }
 }
@@ -225,8 +210,7 @@ async function startTranslation() {
     const response = await fetch(`/api/documents/${selectedDocument.id}/translation`, { method: "POST" });
     if (!response.ok) throw new Error(await responseErrorMessage(response));
     selectedTranslation = await response.json();
-    markdownLanguage = "en";
-    switchToChineseWhenDone = true;
+    renderMarkdown();
     updateTranslationControls();
     startTranslationPolling();
   } catch (error) {
@@ -236,7 +220,7 @@ async function startTranslation() {
 }
 
 function updateTranslationControls() {
-  if (!translateButton || !translationStatus || !markdownLanguageToggle) return;
+  if (!translateButton || !translationStatus) return;
   const status = selectedTranslation?.status || "not_started";
   const running = isTranslationRunning(status);
   const documentReady = selectedDocument?.status === "done";
@@ -244,10 +228,6 @@ function updateTranslationControls() {
 
   translateButton.disabled = !documentReady || running;
   translateButton.textContent = running ? "翻译中…" : hasTranslation ? "重新翻译" : status === "failed" || status === "stale" ? "重试翻译" : "翻译";
-  markdownLanguageToggle.classList.toggle("hidden", !hasTranslation);
-  markdownLanguageButtons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.markdownLanguage === markdownLanguage);
-  });
 
   const current = Number(selectedTranslation?.progress_current || 0);
   const total = Number(selectedTranslation?.progress_total || 0);

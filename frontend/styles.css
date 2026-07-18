@@ -585,33 +585,11 @@ input {
   background: var(--bg);
 }
 
-.markdown-language-toggle {
-  display: flex;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-
-.markdown-language-toggle button,
 .translate-button {
   border: 0;
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
-}
-
-.markdown-language-toggle button {
-  padding: 7px 12px;
-}
-
-.markdown-language-toggle button + button {
-  border-left: 1px solid var(--line);
-}
-
-.markdown-language-toggle button.active {
-  background: #dff5ed;
-  color: var(--accent-strong);
-  font-weight: 700;
 }
 
 .translation-status {
@@ -640,6 +618,28 @@ input {
 .translate-button:disabled {
   opacity: 0.6;
   cursor: wait;
+}
+
+.markdown-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.markdown-columns.has-translation {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.markdown-pane {
+  min-width: 0;
+}
+
+.markdown-pane-title {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .markdown-content {
@@ -752,6 +752,10 @@ input {
     width: 100%;
     margin-left: 0;
     white-space: normal;
+  }
+
+  .markdown-columns.has-translation {
+    grid-template-columns: minmax(0, 1fr);
   }
 
 }
