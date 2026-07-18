@@ -327,6 +327,17 @@ input {
   cursor: not-allowed;
 }
 
+.edit-toolbar button.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
+.edit-toolbar .add-visual-hint {
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
 .page-pair {
   display: grid;
   grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
@@ -360,6 +371,15 @@ input {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.compare-view.adding-visual .pdf-page {
+  cursor: crosshair;
+}
+
+.compare-view.adding-visual .pdf-page img {
+  user-select: none;
+  pointer-events: none;
 }
 
 .text-block {
@@ -565,6 +585,15 @@ input {
   z-index: 20;
   border: 1px solid var(--accent);
   background: rgba(15, 118, 110, 0.12);
+  pointer-events: none;
+}
+
+.new-visual-region {
+  position: absolute;
+  z-index: 24;
+  border: 2px dashed var(--accent);
+  background: rgba(15, 118, 110, 0.2);
+  box-shadow: 0 0 0 9999px rgba(19, 47, 58, 0.08);
   pointer-events: none;
 }
 

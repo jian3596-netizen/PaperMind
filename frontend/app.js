@@ -17,6 +17,8 @@ const translationStatus = document.querySelector("#translation-status");
 const tabButtons = document.querySelectorAll(".view-tabs button");
 const editToolbar = document.querySelector("#edit-toolbar");
 const selectionCount = document.querySelector("#selection-count");
+const addVisualButton = document.querySelector("#add-visual");
+const addVisualHint = document.querySelector("#add-visual-hint");
 const deleteSelectedButton = document.querySelector("#delete-selected");
 const undoEditButton = document.querySelector("#undo-edit");
 const resetEditButton = document.querySelector("#reset-edit");
@@ -27,6 +29,8 @@ let selectedTranslation = { status: "not_started" };
 let pollTimer = null;
 let translationPollTimer = null;
 let currentView = "compare";
+let addingVisual = false;
+let creatingVisual = false;
 let selectedBlockIds = new Set();
 
 fileInput.addEventListener("change", () => {
@@ -76,10 +80,12 @@ deleteSelectedButton.addEventListener("click", deleteSelectedBlocks);
 undoEditButton.addEventListener("click", undoEdit);
 resetEditButton.addEventListener("click", resetEdits);
 translateButton.addEventListener("click", startTranslation);
+addVisualButton.addEventListener("click", () => setAddVisualMode(!addingVisual));
 
 tabButtons.forEach((button) => {
   button.addEventListener("click", () => {
     currentView = button.dataset.view;
+    if (currentView !== "compare") setAddVisualMode(false);
     tabButtons.forEach((item) => item.classList.toggle("active", item === button));
     renderSelectedDocument();
   });
@@ -122,6 +128,7 @@ async function deleteDocument(item) {
     selectedId = null;
     selectedDocument = null;
     selectedTranslation = { status: "not_started" };
+    setAddVisualMode(false);
     stopTranslationPolling();
     compareView.classList.add("hidden");
     markdownView.classList.add("hidden");
@@ -138,6 +145,7 @@ async function loadDocument(id) {
   const response = await fetch(`/api/documents/${id}`);
   selectedDocument = await response.json();
   if (documentChanged) {
+    setAddVisualMode(false);
     stopTranslationPolling();
   }
   await loadTranslation(id);
@@ -288,6 +296,7 @@ function renderCompare(doc) {
     pdfPage.className = "pdf-page";
     pdfPage.style.aspectRatio = `${page.width} / ${page.height}`;
     pdfPage.innerHTML = `<img src="/api/documents/${doc.id}/pages/${page.page}.png" alt="PDF 第 ${page.page + 1} 页" loading="lazy" />`;
+    setupAddVisualRegion(pdfPage, page);
     pdfColumn.appendChild(pdfPage);
 
     const textColumn = document.createElement("div");
@@ -387,7 +396,102 @@ function updateSelectionStyles() {
 function updateEditToolbarVisibility() {
   const visible = currentView === "compare" && selectedDocument?.status === "done";
   editToolbar.classList.toggle("hidden", !visible);
+  compareView.classList.toggle("adding-visual", visible && addingVisual);
+  addVisualButton.classList.toggle("active", addingVisual);
+  addVisualButton.textContent = creatingVisual ? "正在添加…" : addingVisual ? "取消新增" : "新增截图";
+  addVisualButton.disabled = !visible || creatingVisual;
+  addVisualHint.classList.toggle("hidden", !visible || !addingVisual);
   updateSelectionStyles();
+}
+
+function setAddVisualMode(enabled) {
+  addingVisual = Boolean(enabled) && !creatingVisual && currentView === "compare" && selectedDocument?.status === "done";
+  if (addingVisual) {
+    selectedBlockIds.clear();
+  }
+  updateEditToolbarVisibility();
+}
+
+function setupAddVisualRegion(pageEl, page) {
+  pageEl.addEventListener("mousedown", (event) => {
+    if (!addingVisual || creatingVisual || event.button !== 0 || event.target.closest("[data-resize-handle]")) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const pageRect = pageEl.getBoundingClientRect();
+    const start = pagePointFromClient(event.clientX, event.clientY, pageRect, page);
+    const draft = document.createElement("div");
+    draft.className = "new-visual-region";
+    pageEl.appendChild(draft);
+
+    let current = start;
+    const renderDraft = () => {
+      const x0 = Math.min(start.x, current.x);
+      const y0 = Math.min(start.y, current.y);
+      const x1 = Math.max(start.x, current.x);
+      const y1 = Math.max(start.y, current.y);
+      positionVisualRegion(draft, { x0, y0, x1, y1 }, page.width, page.height);
+    };
+    renderDraft();
+
+    const onMove = (moveEvent) => {
+      current = pagePointFromClient(moveEvent.clientX, moveEvent.clientY, pageRect, page);
+      renderDraft();
+    };
+    const onUp = async (upEvent) => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      current = pagePointFromClient(upEvent.clientX, upEvent.clientY, pageRect, page);
+      const bbox = [
+        Math.min(start.x, current.x),
+        Math.min(start.y, current.y),
+        Math.max(start.x, current.x),
+        Math.max(start.y, current.y),
+      ];
+      draft.remove();
+      if (bbox[2] - bbox[0] < 8 || bbox[3] - bbox[1] < 8) return;
+      await saveNewVisual(page.page, bbox);
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+}
+
+function pagePointFromClient(clientX, clientY, pageRect, page) {
+  return {
+    x: clamp(((clientX - pageRect.left) / pageRect.width) * page.width, 0, page.width),
+    y: clamp(((clientY - pageRect.top) / pageRect.height) * page.height, 0, page.height),
+  };
+}
+
+async function saveNewVisual(pageIndex, bbox) {
+  if (!selectedDocument) return;
+  creatingVisual = true;
+  updateEditToolbarVisibility();
+  try {
+    const response = await fetch(`/api/documents/${selectedDocument.id}/edit/add-visual`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page_index: pageIndex, bbox }),
+    });
+    if (!response.ok) throw new Error(await responseErrorMessage(response));
+    const result = await response.json();
+    selectedDocument = result.document;
+    selectedBlockIds.clear();
+    selectedBlockIds.add(result.block_id);
+    if (selectedTranslation.status === "done") {
+      selectedTranslation = { ...selectedTranslation, status: "stale", error: "原文已修改，请重新翻译" };
+    }
+    addingVisual = false;
+    renderSelectedDocument();
+    await loadHistory();
+  } catch (error) {
+    alert(`新增截图失败：${error.message}`);
+  } finally {
+    creatingVisual = false;
+    updateEditToolbarVisibility();
+  }
 }
 
 function setupVisualRegionResize(regionEl) {

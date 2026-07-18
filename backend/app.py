@@ -37,6 +37,11 @@ class ResizeVisualRequest(BaseModel):
     bbox: list[float]
 
 
+class AddVisualRequest(BaseModel):
+    page_index: int
+    bbox: list[float]
+
+
 @app.on_event("startup")
 def startup() -> None:
     init_db()
@@ -256,6 +261,76 @@ def resize_visual_block(document_id: str, payload: ResizeVisualRequest) -> dict:
     _invalidate_translation(document_id)
 
     return {"ok": True, "document": get_document(document_id)}
+
+
+@app.post("/api/documents/{document_id}/edit/add-visual")
+def add_visual_block(document_id: str, payload: AddVisualRequest) -> dict:
+    if len(payload.bbox) != 4:
+        raise HTTPException(status_code=400, detail="bbox must have 4 numbers")
+
+    row = _get_row(document_id)
+    blocks = _ensure_block_ids(_loads_json(row["blocks_json"]))
+    target_page = next(
+        (page for page in blocks.get("pages", []) if int(page.get("page", -1)) == payload.page_index),
+        None,
+    )
+    if target_page is None:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    bbox = _clamp_bbox(payload.bbox, float(target_page["width"]), float(target_page["height"]))
+    if bbox[2] - bbox[0] < 8 or bbox[3] - bbox[1] < 8:
+        raise HTTPException(status_code=400, detail="bbox is too small")
+
+    for block in target_page.get("blocks", []):
+        if block.get("image_path") and _visual_regions_duplicate(block.get("bbox", []), bbox):
+            raise HTTPException(status_code=409, detail="该区域已经存在截图")
+
+    _push_edit_history(row, "add-visual")
+    block_id = f"p{payload.page_index}-manual-visual-{uuid.uuid4().hex[:10]}"
+    image_path = _crop_pdf_region(row, payload.page_index, bbox, block_id)
+    markdown = row["markdown"] or ""
+    page_blocks = list(target_page.get("blocks", []))
+    markdown = _insert_image_near_region(markdown, image_path, page_blocks, bbox)
+
+    kept_blocks = []
+    removed_text_blocks = []
+    for block in page_blocks:
+        if not block.get("image_path") and _bbox_overlaps_region(block.get("bbox", []), bbox):
+            removed_text_blocks.append(block)
+            continue
+        kept_blocks.append(block)
+    for block in removed_text_blocks:
+        markdown = _remove_block_from_markdown(markdown, block)
+
+    new_block = {
+        "id": block_id,
+        "type": "image",
+        "bbox": bbox,
+        "text": "",
+        "image_path": image_path,
+    }
+    kept_blocks.append(new_block)
+    kept_blocks.sort(key=_block_position)
+    target_page["blocks"] = kept_blocks
+    markdown_clean = clean_markdown(markdown)
+
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE documents
+            SET blocks_json = ?, markdown = ?, markdown_clean = ?
+            WHERE id = ?
+            """,
+            (json.dumps(blocks, ensure_ascii=False), markdown, markdown_clean, document_id),
+        )
+    _invalidate_translation(document_id)
+
+    return {
+        "ok": True,
+        "block_id": block_id,
+        "removed_text_blocks": len(removed_text_blocks),
+        "document": get_document(document_id),
+    }
 
 
 @app.post("/api/documents/{document_id}/edit/undo")
@@ -488,6 +563,52 @@ def _bbox_overlaps_region(block_bbox: list[float], region_bbox: list[float]) -> 
     overlap = max(ix1 - ix0, 0) * max(iy1 - iy0, 0)
     center_inside = rx0 <= (bx0 + bx1) / 2 <= rx1 and ry0 <= (by0 + by1) / 2 <= ry1
     return overlap / block_area > 0.35 or center_inside
+
+
+def _visual_regions_duplicate(block_bbox: list[float], region_bbox: list[float]) -> bool:
+    if len(block_bbox) != 4 or len(region_bbox) != 4:
+        return False
+    bx0, by0, bx1, by1 = [float(value) for value in block_bbox]
+    rx0, ry0, rx1, ry1 = [float(value) for value in region_bbox]
+    ix0, iy0 = max(bx0, rx0), max(by0, ry0)
+    ix1, iy1 = min(bx1, rx1), min(by1, ry1)
+    overlap = max(ix1 - ix0, 0) * max(iy1 - iy0, 0)
+    smaller_area = max(min((bx1 - bx0) * (by1 - by0), (rx1 - rx0) * (ry1 - ry0)), 1.0)
+    return overlap / smaller_area > 0.75
+
+
+def _block_position(block: dict) -> tuple[float, float]:
+    bbox = block.get("bbox", [])
+    if len(bbox) != 4:
+        return (0.0, 0.0)
+    return (float(bbox[1]), float(bbox[0]))
+
+
+def _insert_image_near_region(markdown: str, image_path: str, page_blocks: list[dict], bbox: list[float]) -> str:
+    image_markdown = f"![]({image_path})"
+    candidates = []
+    for block in page_blocks:
+        text = re.sub(r"\s+", " ", str(block.get("text") or "")).strip()
+        block_bbox = block.get("bbox", [])
+        if block.get("image_path") or not text or len(block_bbox) != 4:
+            continue
+        if _bbox_overlaps_region(block_bbox, bbox):
+            continue
+        x0, y0, _, _ = [float(value) for value in block_bbox]
+        if y0 >= bbox[3] - 2:
+            candidates.append((y0, x0, text))
+
+    for _, _, text in sorted(candidates):
+        match = re.search(_flexible_text_pattern(text), markdown, flags=re.IGNORECASE | re.DOTALL)
+        if not match:
+            continue
+        paragraph_start = markdown.rfind("\n\n", 0, match.start())
+        insert_at = 0 if paragraph_start < 0 else paragraph_start + 2
+        return markdown[:insert_at] + image_markdown + "\n\n" + markdown[insert_at:]
+
+    if not markdown.strip():
+        return image_markdown
+    return markdown.rstrip() + "\n\n" + image_markdown
 
 
 def _replace_image_path(markdown: str, old_path: str, new_path: str) -> str:

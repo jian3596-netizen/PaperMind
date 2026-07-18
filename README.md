@@ -9,6 +9,7 @@ PaperMind is a local PDF recognition workspace built on top of MinerU (`magic-pd
 - Show a side-by-side comparison of original PDF pages and positioned recognized content.
 - Render cleaned Markdown with images inserted in place.
 - Supplement missing figure/table/chart crops using PDF text coordinates.
+- Add missing screenshots manually by dragging a region on the source PDF page.
 - Remove visual-region OCR leftovers from Markdown.
 - Select one or more recognition blocks in the comparison view and delete them.
 - Undo the previous edit or reset a document to the post-recognition state.
