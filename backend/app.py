@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from .database import BASE_DIR, RESULT_DIR, UPLOAD_DIR, get_connection, init_db
 from .mineru_service import clean_markdown, run_recognition
+from .translation_service import get_translation, prepare_translation, run_translation
 
 
 app = FastAPI(title="MinerU PDF Recognition API")
@@ -125,6 +126,33 @@ def get_document(document_id: str) -> dict:
     }
 
 
+@app.get("/api/documents/{document_id}/translation")
+def get_document_translation(document_id: str) -> dict:
+    _get_row(document_id)
+    return get_translation(document_id)
+
+
+@app.post("/api/documents/{document_id}/translation")
+def start_document_translation(document_id: str, background_tasks: BackgroundTasks) -> dict:
+    try:
+        prepared = prepare_translation(document_id)
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+    if not prepared["already_running"]:
+        background_tasks.add_task(
+            run_translation,
+            document_id,
+            prepared["translation_id"],
+            prepared["config"],
+        )
+    return get_translation(document_id)
+
+
 @app.post("/api/documents/{document_id}/edit/delete-blocks")
 def delete_blocks(document_id: str, payload: DeleteBlocksRequest) -> dict:
     if not payload.block_ids:
@@ -162,6 +190,7 @@ def delete_blocks(document_id: str, payload: DeleteBlocksRequest) -> dict:
             """,
             (json.dumps(blocks, ensure_ascii=False), markdown, markdown_clean, document_id),
         )
+    _invalidate_translation(document_id)
 
     return {"ok": True, "removed": len(removed_blocks), "document": get_document(document_id)}
 
@@ -224,6 +253,7 @@ def resize_visual_block(document_id: str, payload: ResizeVisualRequest) -> dict:
             """,
             (json.dumps(blocks, ensure_ascii=False), markdown, markdown_clean, document_id),
         )
+    _invalidate_translation(document_id)
 
     return {"ok": True, "document": get_document(document_id)}
 
@@ -252,6 +282,7 @@ def undo_edit(document_id: str) -> dict:
             (history["before_blocks_json"], history["before_markdown"], history["before_markdown_clean"], row["id"]),
         )
         conn.execute("DELETE FROM document_edit_history WHERE id = ?", (history["id"],))
+    _invalidate_translation(document_id)
     return {"ok": True, "document": get_document(document_id)}
 
 
@@ -271,6 +302,7 @@ def reset_edits(document_id: str) -> dict:
             """,
             (blocks_original, markdown_original, markdown_clean_original, document_id),
         )
+    _invalidate_translation(document_id)
     return {"ok": True, "document": get_document(document_id)}
 
 
@@ -377,6 +409,18 @@ def _backfill_original_snapshots() -> None:
                 """,
                 (blocks_json, blocks_original, markdown_original, markdown_clean_original, row["id"]),
             )
+
+
+def _invalidate_translation(document_id: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE translations
+            SET status = 'stale', error = '原文已修改，请重新翻译'
+            WHERE document_id = ?
+            """,
+            (document_id,),
+        )
 
 
 def _ensure_block_ids(blocks: dict) -> dict:

@@ -73,12 +73,71 @@ def init_db() -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS translations (
+                id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                target_language TEXT NOT NULL DEFAULT 'zh-CN',
+                document_summary TEXT,
+                section_summaries_json TEXT,
+                glossary_json TEXT,
+                translated_markdown TEXT,
+                review_notes TEXT,
+                progress_current INTEGER NOT NULL DEFAULT 0,
+                progress_total INTEGER NOT NULL DEFAULT 0,
+                error TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE,
+                UNIQUE(document_id, target_language)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS translation_segments (
+                id TEXT PRIMARY KEY,
+                translation_id TEXT NOT NULL,
+                segment_index INTEGER NOT NULL,
+                section_title TEXT,
+                segment_type TEXT NOT NULL,
+                source_text TEXT NOT NULL,
+                translated_text TEXT,
+                context_json TEXT,
+                status TEXT NOT NULL,
+                error TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(translation_id) REFERENCES translations(id) ON DELETE CASCADE,
+                UNIQUE(translation_id, segment_index)
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TRIGGER IF NOT EXISTS documents_updated_at
             AFTER UPDATE ON documents
             FOR EACH ROW
             BEGIN
                 UPDATE documents SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
             END
+            """
+        )
+        conn.execute(
+            """
+            CREATE TRIGGER IF NOT EXISTS translations_updated_at
+            AFTER UPDATE ON translations
+            FOR EACH ROW
+            BEGIN
+                UPDATE translations SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+            END
+            """
+        )
+        conn.execute(
+            """
+            UPDATE translations
+            SET status = 'failed', error = '服务重启导致翻译任务中断，请重试'
+            WHERE status IN ('queued', 'analyzing', 'translating', 'reviewing')
             """
         )
 

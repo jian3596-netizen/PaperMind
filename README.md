@@ -12,6 +12,8 @@ PaperMind is a local PDF recognition workspace built on top of MinerU (`magic-pd
 - Remove visual-region OCR leftovers from Markdown.
 - Select one or more recognition blocks in the comparison view and delete them.
 - Undo the previous edit or reset a document to the post-recognition state.
+- Translate cleaned English Markdown into Chinese with DeepSeek through its OpenAI-compatible protocol.
+- Switch between the original English Markdown and the persisted Chinese translation.
 - Delete history records and their uploaded/result files.
 
 ## Requirements
@@ -27,6 +29,25 @@ The local MinerU config is expected at `~/magic-pdf.json`. This project has been
 ```bash
 uv sync
 ```
+
+Copy the model configuration and fill in your API key:
+
+```bash
+cp .env.example .env
+```
+
+The default translation provider is DeepSeek V4 Flash:
+
+```dotenv
+TRANSLATION_API_BASE_URL=https://api.deepseek.com
+TRANSLATION_MODEL=deepseek-v4-flash
+TRANSLATION_API_KEY=your-api-key
+TRANSLATION_THINKING=disabled
+TRANSLATION_API_TIMEOUT_SECONDS=180
+TRANSLATION_MAX_OUTPUT_TOKENS=65536
+```
+
+The application calls DeepSeek's OpenAI-compatible Chat Completions endpoint; it does not use an OpenAI model. `TRANSLATION_THINKING` may be `disabled`, `enabled`, or empty when the endpoint does not support this DeepSeek field. Model credentials stay in the untracked `.env` file.
 
 If you already have the virtual environment:
 
@@ -70,6 +91,8 @@ GET    /api/documents/{id}/assets/{asset_path}
 POST   /api/documents/{id}/edit/delete-blocks
 POST   /api/documents/{id}/edit/undo
 POST   /api/documents/{id}/edit/reset
+GET    /api/documents/{id}/translation
+POST   /api/documents/{id}/translation
 ```
 
 ## Notes
@@ -78,4 +101,5 @@ POST   /api/documents/{id}/edit/reset
 - `ocr` mode is useful for scanned PDFs.
 - The comparison view preserves original layout and may show raw line breaks.
 - The Markdown view renders the cleaned version intended for reading/export.
+- Translation analyzes the document first, applies a glossary while translating natural paragraphs with the previous three bilingual paragraphs as context, and performs a final consistency review.
 - Translation planning notes are in [`translation_requirements.md`](translation_requirements.md).

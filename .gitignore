@@ -8,5 +8,8 @@ wheels/
 output/
 storage/
 
+# Local model credentials
+.env
+
 # Virtual environments
 .venv

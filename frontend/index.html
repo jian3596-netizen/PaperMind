@@ -64,6 +64,14 @@
 
       <section id="compare-view" class="compare-view hidden"></section>
       <section id="markdown-view" class="markdown-view hidden">
+        <div class="markdown-toolbar">
+          <div id="markdown-language-toggle" class="markdown-language-toggle hidden" aria-label="Markdown 语言切换">
+            <button type="button" data-markdown-language="en" class="active">英文</button>
+            <button type="button" data-markdown-language="zh">中文</button>
+          </div>
+          <span id="translation-status" class="translation-status"></span>
+          <button id="translate-button" class="translate-button" type="button">翻译</button>
+        </div>
         <div id="markdown-content" class="markdown-content"></div>
       </section>
     </main>
