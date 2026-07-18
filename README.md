@@ -103,4 +103,3 @@ POST   /api/documents/{id}/translation
 - The comparison view preserves original layout and may show raw line breaks.
 - The Markdown view renders the cleaned version intended for reading/export.
 - Translation analyzes the document first, applies a glossary while translating natural paragraphs with the previous three bilingual paragraphs as context, and performs a final consistency review.
-- Translation planning notes are in [`translation_requirements.md`](translation_requirements.md).
