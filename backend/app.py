@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import tempfile
 import uuid
-from pathlib import Path
+import zipfile
+from pathlib import Path, PurePosixPath
+from urllib.parse import unquote
 
 import fitz
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
@@ -12,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
 from .database import BASE_DIR, RESULT_DIR, UPLOAD_DIR, get_connection, init_db
 from .mineru_service import clean_markdown, run_recognition
@@ -156,6 +160,52 @@ def start_document_translation(document_id: str, background_tasks: BackgroundTas
             prepared["config"],
         )
     return get_translation(document_id)
+
+
+@app.get("/api/documents/{document_id}/markdown-export")
+def download_markdown_export(document_id: str) -> FileResponse:
+    row = _get_row(document_id)
+    source_markdown = row["markdown_clean"] or row["markdown"] or ""
+    if row["status"] != "done" or not source_markdown.strip():
+        raise HTTPException(status_code=409, detail="Markdown 原文尚未生成")
+
+    with get_connection() as conn:
+        translation = conn.execute(
+            """
+            SELECT status, translated_markdown
+            FROM translations
+            WHERE document_id = ? AND target_language = 'zh-CN'
+            """,
+            (document_id,),
+        ).fetchone()
+    if translation is None or translation["status"] != "done" or not (translation["translated_markdown"] or "").strip():
+        raise HTTPException(status_code=409, detail="中文译文尚未完成")
+
+    export_name = _safe_export_name(row["original_name"])
+    with tempfile.NamedTemporaryFile(prefix="papermind-export-", suffix=".zip", delete=False) as temporary:
+        export_path = Path(temporary.name)
+    try:
+        _build_markdown_export(
+            export_path,
+            document_id,
+            export_name,
+            Path(row["output_dir"]),
+            source_markdown,
+            translation["translated_markdown"],
+        )
+    except FileNotFoundError as error:
+        export_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except Exception:
+        export_path.unlink(missing_ok=True)
+        raise
+
+    return FileResponse(
+        export_path,
+        media_type="application/zip",
+        filename=f"{export_name}.zip",
+        background=BackgroundTask(export_path.unlink, missing_ok=True),
+    )
 
 
 @app.post("/api/documents/{document_id}/edit/delete-blocks")
@@ -668,6 +718,92 @@ def _flexible_text_pattern(text: str) -> str:
 
 def _search_key(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9\u4e00-\u9fff]+", "", text).lower()
+
+
+def _safe_export_name(original_name: str) -> str:
+    base_name = re.sub(r"\.pdf$", "", str(original_name or "document"), flags=re.IGNORECASE)
+    cleaned = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", "_", base_name).strip(" .")
+    return cleaned[:160].rstrip(" .") or "document"
+
+
+def _build_markdown_export(
+    export_path: Path,
+    document_id: str,
+    export_name: str,
+    output_dir: Path,
+    source_markdown: str,
+    translated_markdown: str,
+) -> None:
+    output_dir = output_dir.resolve()
+    archived_images: dict[Path, str] = {}
+    used_image_names: set[str] = set()
+    root = PurePosixPath(export_name)
+
+    with zipfile.ZipFile(export_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        def replace_image(match: re.Match) -> str:
+            target = match.group(2).strip()
+            image_path = _resolve_export_asset(output_dir, document_id, target)
+            if image_path is None:
+                if re.match(r"^(?:https?:|data:|#)", target, flags=re.IGNORECASE):
+                    return match.group(0)
+                raise FileNotFoundError(f"Markdown 引用的图片不存在：{target}")
+
+            archive_path = archived_images.get(image_path)
+            if archive_path is None:
+                image_name = _unique_image_name(image_path.name, used_image_names)
+                archive_path = str(root / "images" / image_name)
+                archive.write(image_path, archive_path)
+                archived_images[image_path] = archive_path
+            relative_path = PurePosixPath(archive_path).relative_to(root)
+            return f"{match.group(1)}{relative_path}{match.group(3)}"
+
+        image_pattern = re.compile(r"(!\[[^\]]*\]\()([^)]+)(\))")
+        exported_source = image_pattern.sub(replace_image, source_markdown)
+        exported_translation = image_pattern.sub(replace_image, translated_markdown)
+        archive.writestr(str(root / f"{export_name}-原文.md"), exported_source)
+        archive.writestr(str(root / f"{export_name}-中文.md"), exported_translation)
+
+
+def _resolve_export_asset(output_dir: Path, document_id: str, target: str) -> Path | None:
+    decoded_target = unquote(target.strip().strip("<>"))
+    api_prefix = f"/api/documents/{document_id}/assets/"
+    if decoded_target.startswith(api_prefix):
+        decoded_target = decoded_target[len(api_prefix):]
+    elif decoded_target.startswith("/") or re.match(r"^[a-z][a-z0-9+.-]*:", decoded_target, flags=re.IGNORECASE):
+        return None
+    decoded_target = decoded_target.split("?", 1)[0].split("#", 1)[0]
+
+    relative_path = PurePosixPath(decoded_target)
+    if not relative_path.parts or ".." in relative_path.parts:
+        return None
+
+    direct_path = (output_dir / Path(*relative_path.parts)).resolve()
+    if direct_path.is_file() and output_dir in direct_path.parents:
+        return direct_path
+
+    suffix_parts = relative_path.parts
+    for candidate in output_dir.rglob(relative_path.name):
+        if not candidate.is_file():
+            continue
+        resolved = candidate.resolve()
+        if output_dir not in resolved.parents:
+            continue
+        candidate_parts = resolved.relative_to(output_dir).parts
+        if len(candidate_parts) >= len(suffix_parts) and candidate_parts[-len(suffix_parts):] == suffix_parts:
+            return resolved
+    return None
+
+
+def _unique_image_name(file_name: str, used_names: set[str]) -> str:
+    safe_name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", "_", file_name).strip(" .") or "image"
+    candidate = safe_name
+    counter = 2
+    while candidate.casefold() in used_names:
+        path = Path(safe_name)
+        candidate = f"{path.stem}-{counter}{path.suffix}"
+        counter += 1
+    used_names.add(candidate.casefold())
+    return candidate
 
 
 frontend_dir = BASE_DIR / "frontend"

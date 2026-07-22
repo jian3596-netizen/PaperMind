@@ -14,6 +14,7 @@ const translatedMarkdownPane = document.querySelector("#translated-markdown-pane
 const translatedMarkdownContent = document.querySelector("#translated-markdown-content");
 const translateButton = document.querySelector("#translate-button");
 const translationStatus = document.querySelector("#translation-status");
+const downloadMarkdownArchiveButton = document.querySelector("#download-markdown-archive-button");
 const tabButtons = document.querySelectorAll(".view-tabs button");
 const editToolbar = document.querySelector("#edit-toolbar");
 const selectionCount = document.querySelector("#selection-count");
@@ -80,6 +81,7 @@ deleteSelectedButton.addEventListener("click", deleteSelectedBlocks);
 undoEditButton.addEventListener("click", undoEdit);
 resetEditButton.addEventListener("click", resetEdits);
 translateButton.addEventListener("click", startTranslation);
+downloadMarkdownArchiveButton.addEventListener("click", downloadMarkdownArchive);
 addVisualButton.addEventListener("click", () => setAddVisualMode(!addingVisual));
 
 tabButtons.forEach((button) => {
@@ -192,6 +194,17 @@ function renderMarkdown() {
     : "";
   translatedMarkdownPane.classList.toggle("hidden", !hasTranslation);
   markdownColumns.classList.toggle("has-translation", hasTranslation);
+  downloadMarkdownArchiveButton.disabled = selectedDocument.status !== "done" || !sourceMarkdown.trim() || !hasTranslation;
+  downloadMarkdownArchiveButton.title = hasTranslation ? "下载原文、中文译文和全部本地图片" : "请先完成中文翻译";
+}
+
+function downloadMarkdownArchive() {
+  if (!selectedDocument) return;
+  const link = document.createElement("a");
+  link.href = `/api/documents/${selectedDocument.id}/markdown-export`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 async function loadTranslation(documentId) {

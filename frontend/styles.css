@@ -614,11 +614,25 @@ input {
   background: var(--bg);
 }
 
-.translate-button {
+.translate-button,
+.markdown-action-button {
   border: 0;
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
+}
+
+.markdown-action-button {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.markdown-action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .translation-status {

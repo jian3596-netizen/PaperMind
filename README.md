@@ -88,6 +88,7 @@ DELETE /api/documents/{id}
 GET    /api/documents/{id}/pdf
 GET    /api/documents/{id}/pages/{page}.png
 GET    /api/documents/{id}/assets/{asset_path}
+GET    /api/documents/{id}/markdown-export
 
 POST   /api/documents/{id}/edit/delete-blocks
 POST   /api/documents/{id}/edit/undo
@@ -102,4 +103,5 @@ POST   /api/documents/{id}/translation
 - `ocr` mode is useful for scanned PDFs.
 - The comparison view preserves original layout and may show raw line breaks.
 - The Markdown view renders the cleaned version intended for reading/export.
+- After translation completes, the Markdown toolbar downloads a ZIP containing the cleaned source Markdown, Chinese Markdown, and all locally referenced images with portable relative paths.
 - Translation analyzes the document first, applies a glossary while translating natural paragraphs with the previous three bilingual paragraphs as context, and performs a final consistency review.
